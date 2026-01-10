@@ -53,11 +53,16 @@ class DataManager:
             return []
 
     def save_record(self, start_dt, end_dt):
-        """保存单条记录"""
-        records = self.load_records()
+        """保存单条记录 (增加小于1分钟不保存的逻辑)"""
         duration = (end_dt - start_dt).total_seconds()
         
-        # 数据结构
+        # --- 新增逻辑: 过滤小于60秒的记录 ---
+        if duration < 60:
+            print(f"时长过短 ({duration}s)，忽略该记录。")
+            return
+        # ----------------------------------
+
+        records = self.load_records()
         new_record = {
             "start": start_dt.strftime("%Y-%m-%d %H:%M:%S"),
             "end": end_dt.strftime("%Y-%m-%d %H:%M:%S"),
@@ -67,6 +72,18 @@ class DataManager:
         
         with open(self.data_file, 'w', encoding='utf-8') as f:
             json.dump(records, f, indent=4)
+
+    def get_today_total_seconds(self):
+        """获取'逻辑今天'的总工作时长(秒)"""
+        records = self.load_records()
+        today = datetime.date.today()
+        total = 0
+        for r in records:
+            s_dt = datetime.datetime.strptime(r['start'], "%Y-%m-%d %H:%M:%S")
+            # 使用逻辑日期 (比如凌晨2点仍算作昨天)
+            if self.get_logical_date(s_dt) == today:
+                total += r['duration']
+        return total
             
     # ===========================
     # 核心逻辑算法
