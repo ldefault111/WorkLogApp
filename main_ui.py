@@ -14,8 +14,9 @@ from chart_engine import ReportWindow
 class MainApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("My Work Timer V3.4")
-        self.root.geometry("400x420")
+        self.root.title("My Work Timer V1.0") 
+        # [调整] 高度增加到 460 以容纳底部工具栏
+        self.root.geometry("400x460")
         self.root.resizable(False, False)
         
         # 1. 加载数据管理器
@@ -37,18 +38,16 @@ class MainApp:
         self.root.protocol("WM_DELETE_WINDOW", self.hide_window)
 
     def _setup_ui(self):
-        # --- 菜单栏配置 ---
+        # --- 菜单栏配置 (保留作为备用入口) ---
         menubar = tk.Menu(self.root)
         self.root.config(menu=menubar)
 
-        # 1. 文件菜单 (新增)
         file_menu = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label="文件", menu=file_menu)
-        file_menu.add_command(label="设置数据文件位置...", command=self.set_data_path)
-        file_menu.add_separator()
-        file_menu.add_command(label="退出程序", command=self.quit_app)
+        menubar.add_cascade(label="选项", menu=file_menu)
+        file_menu.add_command(label="⚙️ 设置 (路径/习惯)", command=self.open_settings_window)
+        #file_menu.add_separator()
+        #file_menu.add_command(label="退出程序", command=self.quit_app)
 
-        # 2. 统计菜单
         stats_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="统计", menu=stats_menu)
         stats_menu.add_command(label="打开可视化报表", command=self.open_report)
@@ -59,6 +58,8 @@ class MainApp:
         style.configure("Status.TLabel", font=("Microsoft YaHei UI", 10), foreground="#666")
         style.configure("Info.TLabel", font=("Microsoft YaHei UI", 11, "bold"), foreground="#007ACC")
         style.configure("Action.TButton", font=("Microsoft YaHei UI", 12))
+        # 新增样式
+        style.configure("Hint.TLabel", font=("Microsoft YaHei UI", 9), foreground="#888888")
 
         # --- 工作计时区 ---
         frame_work = ttk.LabelFrame(self.root, text="工作记录", padding=20)
@@ -70,7 +71,6 @@ class MainApp:
         self.lbl_status = ttk.Label(frame_work, text="当前状态: 空闲", style="Status.TLabel", anchor="center")
         self.lbl_status.pack(fill='x', pady=(0, 5))
 
-        # [修改] 今日累计时长
         self.lbl_today = ttk.Label(frame_work, text="今日累计: 0 h 0 min", style="Info.TLabel", anchor="center")
         self.lbl_today.pack(fill='x', pady=(0, 10))
         
@@ -85,7 +85,10 @@ class MainApp:
         input_frame.pack(fill='x', pady=5)
         
         ttk.Label(input_frame, text="时长(分钟):").pack(side='left')
-        self.var_pomo_mins = tk.IntVar(value=self.db.config.get("pomodoro_duration", 25))
+        
+        default_pomo = self.db.get_setting("pomodoro_duration", 25)
+        self.var_pomo_mins = tk.IntVar(value=default_pomo)
+        
         self.spin_pomo = ttk.Spinbox(input_frame, from_=1, to=120, textvariable=self.var_pomo_mins, width=5)
         self.spin_pomo.pack(side='left', padx=5)
         
@@ -95,61 +98,135 @@ class MainApp:
         self.lbl_pomo_timer = ttk.Label(frame_pomo, text="25:00", font=("Consolas", 16), foreground="#888")
         self.lbl_pomo_timer.pack(pady=5)
 
+        # ===========================
+        # [新增] 底部工具栏/提示区
+        # ===========================
+        frame_bottom = ttk.Frame(self.root)
+        frame_bottom.pack(fill="x", side="bottom", padx=15, pady=15)
+
+        # 左侧：最小化提示
+        # 使用 unicode 符号 ↗ 或 ⨯ 来指代右上角
+        lbl_hint = ttk.Label(frame_bottom, text="ℹ️ 提示：点击右上角[×]可最小化至托盘", style="Hint.TLabel")
+        lbl_hint.pack(side="left", anchor="center")
+
+        # 右侧：退出按钮
+        # 既然是直接退出，可以用个稍微不同的样式，或者普通按钮
+        btn_quit = ttk.Button(frame_bottom, text="彻底退出", command=self.quit_app, width=10)
+        btn_quit.pack(side="right", anchor="center")
+
+
     # ===========================
-    # 新增功能逻辑
+    # 设置面板逻辑
     # ===========================
-    def set_data_path(self):
-        """设置数据文件路径 (支持选择现有文件 或 新建文件)"""
-        # 获取当前路径作为默认打开位置
-        current_path = os.path.abspath(self.db.data_file)
-        current_dir = os.path.dirname(current_path)
+    def open_settings_window(self):
+        """打开设置窗口 (路径设置与习惯设置分离)"""
+        sw = tk.Toplevel(self.root)
+        sw.title("程序设置")
+        sw.geometry("520x300")
+        sw.resizable(False, False)
+        sw.grab_set()
+
+        # --- 区域1: 数据文件路径 ---
+        lf_path = tk.LabelFrame(sw, text="数据存储位置 (修改即时生效)", padx=15, pady=15)
+        lf_path.pack(fill="x", padx=15, pady=15)
+
+        current_path = self.db.data_file
+        lbl_path_val = tk.Label(lf_path, text=current_path, fg="#555", bg="#f0f0f0", 
+                                wraplength=460, justify="left", relief="sunken", padx=5, pady=5)
+        lbl_path_val.pack(fill="x", pady=(0, 10))
+
+        btn_change = tk.Button(lf_path, text="📂 修改/新建 数据文件路径...", 
+                               command=lambda: self.change_data_path_logic(sw, lbl_path_val))
+        btn_change.pack(anchor="w")
+
+        # --- 区域2: 个人习惯 ---
+        lf_pref = tk.LabelFrame(sw, text="个人习惯", padx=15, pady=15)
+        lf_pref.pack(fill="x", padx=15, pady=(0, 15))
+
+        f_offset = tk.Frame(lf_pref)
+        f_offset.pack(fill="x", pady=5)
         
-        # 使用 asksaveasfilename，这样用户可以在对话框里输入新文件名
-        # confirmoverwrite=False 表示如果你选了已有文件，不会弹窗提示"是否覆盖"，因为我们只是想选中它
-        path = filedialog.asksaveasfilename(
-            title="选择现有数据文件 或 输入文件名新建",
+        tk.Label(f_offset, text="新的一天开始于 (凌晨几点):").pack(side="left")
+        
+        current_offset = self.db.get_setting("day_offset_hour", 4)
+        spin_offset = tk.Spinbox(f_offset, from_=0, to=23, width=5)
+        spin_offset.delete(0, "end")
+        spin_offset.insert(0, current_offset)
+        spin_offset.pack(side="left", padx=(10, 5))
+
+        # 保存按钮
+        def save_habit():
+            try:
+                new_offset = int(spin_offset.get())
+                self.db.update_setting("day_offset_hour", new_offset)
+                self.update_today_total()
+                messagebox.showinfo("已保存", "【个人习惯】设置已更新。")
+            except ValueError:
+                messagebox.showerror("错误", "请输入有效数字")
+
+        btn_save_habit = ttk.Button(f_offset, text="保存", command=save_habit, width=5)
+        btn_save_habit.pack(side="left", padx=5)
+        
+        tk.Label(f_offset, text="(填4代表凌晨3点仍算作昨天)", fg="gray", font=("", 8)).pack(side="left", padx=5)
+
+    def change_data_path_logic(self, parent_window, label_widget):
+        """执行修改路径的逻辑"""
+        current_dir = os.path.dirname(self.db.data_file)
+        
+        new_path = filedialog.asksaveasfilename(
+            parent=parent_window,
+            title="修改数据文件路径 (选中已有文件 或 输入新文件名)",
             initialdir=current_dir,
             defaultextension=".json",
-            confirmoverwrite=False, 
-            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")]
+            initialfile="work_data.json",
+            confirmoverwrite=False,
+            filetypes=[("JSON Files", "*.json")]
         )
         
-        if path:
-            try:
-                # === 关键逻辑：如果是新文件，先初始化为 空列表 [] ===
-                if not os.path.exists(path):
-                    with open(path, 'w', encoding='utf-8') as f:
-                        # 这里写入 [] 确保符合你强调的列表格式
-                        json.dump([], f, indent=4)
-                    print(f"已创建新数据文件: {path}")
+        if not new_path:
+            return
 
-                # 1. 更新内存配置
-                self.db.config["data_path"] = path
-                self.db.data_file = path
-                
-                # 2. 写入配置文件 (config.json)
-                with open(self.db.config_file, 'w', encoding='utf-8') as f:
-                    json.dump(self.db.config, f, indent=4)
-                
-                # 3. 刷新数据
-                # 因为重新加载了文件，界面上的今日时间需要重置/重算
-                self.update_today_total()
-                
-                messagebox.showinfo("设置成功", f"数据文件路径已更新为:\n{path}\n\n如果是新文件，已自动初始化。")
-                
-            except Exception as e:
-                messagebox.showerror("设置失败", f"无法创建或读取文件:\n{e}")
+        try:
+            is_new_file = False
+            if not os.path.exists(new_path):
+                is_new_file = True
+            elif os.path.getsize(new_path) == 0:
+                is_new_file = True
+            
+            if is_new_file:
+                ans = messagebox.askyesno(
+                    "创建新库", 
+                    "目标是新文件。\n是否将【当前已有的记录和设置】复制过去？\n\n(选择'否'将创建一个全新的空数据库)",
+                    parent=parent_window
+                )
+                if ans:
+                    with open(new_path, 'w', encoding='utf-8') as f:
+                        json.dump(self.db.full_data, f, indent=4)
+                else:
+                    with open(new_path, 'w', encoding='utf-8') as f:
+                        empty_data = {"settings": self.db.full_data.get("settings", {}), "records": []}
+                        json.dump(empty_data, f, indent=4)
+            
+            self.db.save_local_pointer(new_path)
+            label_widget.config(text=new_path)
+            self.update_today_total()
+            
+            msg = "路径设置成功。" + ("\n(已初始化新文件)" if is_new_file else "\n(已切换至现有数据文件)")
+            messagebox.showinfo("成功", msg, parent=parent_window)
+            
+        except Exception as e:
+            messagebox.showerror("失败", f"设置路径失败:\n{e}", parent=parent_window)
 
+    # ===========================
+    # 核心工作逻辑
+    # ===========================
     def update_today_total(self):
-        """[修改] 刷新今日累计时长 (x h x min)"""
+        """刷新今日累计时长"""
         total_sec = self.db.get_today_total_seconds()
         m, s = divmod(total_sec, 60)
         h, m = divmod(m, 60)
         self.lbl_today.config(text=f"今日累计: {int(h)} h {int(m)} min")
 
-    # ===========================
-    # 核心工作逻辑
-    # ===========================
     def toggle_work(self):
         if not self.is_working:
             self.is_working = True
@@ -164,13 +241,10 @@ class MainApp:
         if self.is_working:
             self.is_working = False
             end_time = datetime.datetime.now()
-            
             self.db.save_record(self.start_time, end_time)
-            
             self.btn_work.config(text="开始工作")
             self.lbl_status.config(text="已停止，记录已保存", foreground="#666")
             self.lbl_timer.config(text="00:00:00")
-            
             self.update_today_total()
 
     def _run_work_timer(self):
@@ -187,15 +261,12 @@ class MainApp:
     # ===========================
     def toggle_pomo(self):
         if not self.pomo_running:
-            # 自动联动工作记录
             if not self.is_working:
                 self.toggle_work()
-            
             try:
                 mins = int(self.var_pomo_mins.get())
             except:
                 mins = 25
-            
             self.pomo_remaining = mins * 60
             self.pomo_running = True
             self.btn_pomo.config(text="取消")
@@ -208,7 +279,6 @@ class MainApp:
         self.pomo_running = False
         self.btn_pomo.config(text="启动")
         self.spin_pomo.config(state='normal')
-        
         if completed:
             self.lbl_pomo_timer.config(text="完成!", foreground="#4CAF50")
             self.root.deiconify()
@@ -243,7 +313,7 @@ class MainApp:
     def _setup_tray(self):
         menu = pystray.Menu(
             pystray.MenuItem("显示主界面", self.show_window, default=True),
-            pystray.MenuItem("退出程序", self.quit_app)
+            #pystray.MenuItem("退出程序", self.quit_app)
         )
         self.icon = pystray.Icon("WorkTimer", self.create_icon(), "Work Timer", menu)
         threading.Thread(target=self.icon.run, daemon=True).start()
