@@ -14,11 +14,7 @@ from chart_engine import ReportWindow
 class MainApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("My Work Timer V3.7") 
-        
-    def __init__(self, root):
-        self.root = root
-        self.root.title("My Work Timer V1.0") 
+        self.root.title("My Work Logger V1.0") 
         # [调整] 高度增加到 460 以容纳底部工具栏
         self.root.geometry("400x520")
         self.root.resizable(False, True)
