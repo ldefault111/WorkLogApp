@@ -1,8 +1,10 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 import datetime
 import threading
 import sys
+import json
+import os
 from PIL import Image, ImageDraw
 import pystray
 
@@ -12,12 +14,14 @@ from chart_engine import ReportWindow
 class MainApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("My Work Timer V3.3")
-        self.root.geometry("400x420") # 稍微调高一点高度以容纳新标签
+        self.root.title("My Work Timer V3.4")
+        self.root.geometry("400x420")
         self.root.resizable(False, False)
         
+        # 1. 加载数据管理器
         self.db = DataManager()
         
+        # 2. 状态变量
         self.is_working = False
         self.start_time = None
         self.pomo_running = False
@@ -29,24 +33,34 @@ class MainApp:
         # 启动时刷新一次今日时长
         self.update_today_total()
         
+        # 拦截关闭事件 -> 最小化
         self.root.protocol("WM_DELETE_WINDOW", self.hide_window)
 
     def _setup_ui(self):
-        # 菜单
+        # --- 菜单栏配置 ---
         menubar = tk.Menu(self.root)
         self.root.config(menu=menubar)
+
+        # 1. 文件菜单 (新增)
+        file_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="文件", menu=file_menu)
+        file_menu.add_command(label="设置数据文件位置...", command=self.set_data_path)
+        file_menu.add_separator()
+        file_menu.add_command(label="退出程序", command=self.quit_app)
+
+        # 2. 统计菜单
         stats_menu = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label="统计报表", menu=stats_menu)
+        menubar.add_cascade(label="统计", menu=stats_menu)
         stats_menu.add_command(label="打开可视化报表", command=self.open_report)
 
-        # 样式
+        # --- 样式配置 ---
         style = ttk.Style()
         style.configure("Big.TLabel", font=("Microsoft YaHei UI", 28, "bold"))
         style.configure("Status.TLabel", font=("Microsoft YaHei UI", 10), foreground="#666")
-        style.configure("Info.TLabel", font=("Microsoft YaHei UI", 11, "bold"), foreground="#007ACC") # 新样式
+        style.configure("Info.TLabel", font=("Microsoft YaHei UI", 11, "bold"), foreground="#007ACC")
         style.configure("Action.TButton", font=("Microsoft YaHei UI", 12))
 
-        # --- 区域1: 工作计时 ---
+        # --- 工作计时区 ---
         frame_work = ttk.LabelFrame(self.root, text="工作记录", padding=20)
         frame_work.pack(fill="x", padx=15, pady=10)
         
@@ -56,14 +70,14 @@ class MainApp:
         self.lbl_status = ttk.Label(frame_work, text="当前状态: 空闲", style="Status.TLabel", anchor="center")
         self.lbl_status.pack(fill='x', pady=(0, 5))
 
-        # [新增] 今日累计时长
-        self.lbl_today = ttk.Label(frame_work, text="今日累计: 0.0h", style="Info.TLabel", anchor="center")
+        # [修改] 今日累计时长
+        self.lbl_today = ttk.Label(frame_work, text="今日累计: 0 h 0 min", style="Info.TLabel", anchor="center")
         self.lbl_today.pack(fill='x', pady=(0, 10))
         
         self.btn_work = ttk.Button(frame_work, text="开始工作", style="Action.TButton", command=self.toggle_work)
         self.btn_work.pack(fill='x', ipady=5)
 
-        # --- 区域2: 番茄钟 ---
+        # --- 番茄钟区 ---
         frame_pomo = ttk.LabelFrame(self.root, text="番茄专注", padding=15)
         frame_pomo.pack(fill="x", padx=15, pady=5)
         
@@ -81,25 +95,69 @@ class MainApp:
         self.lbl_pomo_timer = ttk.Label(frame_pomo, text="25:00", font=("Consolas", 16), foreground="#888")
         self.lbl_pomo_timer.pack(pady=5)
 
+    # ===========================
+    # 新增功能逻辑
+    # ===========================
+    def set_data_path(self):
+        """设置数据文件路径 (支持选择现有文件 或 新建文件)"""
+        # 获取当前路径作为默认打开位置
+        current_path = os.path.abspath(self.db.data_file)
+        current_dir = os.path.dirname(current_path)
+        
+        # 使用 asksaveasfilename，这样用户可以在对话框里输入新文件名
+        # confirmoverwrite=False 表示如果你选了已有文件，不会弹窗提示"是否覆盖"，因为我们只是想选中它
+        path = filedialog.asksaveasfilename(
+            title="选择现有数据文件 或 输入文件名新建",
+            initialdir=current_dir,
+            defaultextension=".json",
+            confirmoverwrite=False, 
+            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")]
+        )
+        
+        if path:
+            try:
+                # === 关键逻辑：如果是新文件，先初始化为 空列表 [] ===
+                if not os.path.exists(path):
+                    with open(path, 'w', encoding='utf-8') as f:
+                        # 这里写入 [] 确保符合你强调的列表格式
+                        json.dump([], f, indent=4)
+                    print(f"已创建新数据文件: {path}")
+
+                # 1. 更新内存配置
+                self.db.config["data_path"] = path
+                self.db.data_file = path
+                
+                # 2. 写入配置文件 (config.json)
+                with open(self.db.config_file, 'w', encoding='utf-8') as f:
+                    json.dump(self.db.config, f, indent=4)
+                
+                # 3. 刷新数据
+                # 因为重新加载了文件，界面上的今日时间需要重置/重算
+                self.update_today_total()
+                
+                messagebox.showinfo("设置成功", f"数据文件路径已更新为:\n{path}\n\n如果是新文件，已自动初始化。")
+                
+            except Exception as e:
+                messagebox.showerror("设置失败", f"无法创建或读取文件:\n{e}")
+
     def update_today_total(self):
-        """刷新今日累计时长"""
+        """[修改] 刷新今日累计时长 (x h x min)"""
         total_sec = self.db.get_today_total_seconds()
-        hours = total_sec / 3600.0
-        self.lbl_today.config(text=f"今日累计: {hours:.1f} 小时")
+        m, s = divmod(total_sec, 60)
+        h, m = divmod(m, 60)
+        self.lbl_today.config(text=f"今日累计: {int(h)} h {int(m)} min")
 
     # ===========================
-    # 工作逻辑
+    # 核心工作逻辑
     # ===========================
     def toggle_work(self):
         if not self.is_working:
-            # 开始工作
             self.is_working = True
             self.start_time = datetime.datetime.now()
             self.btn_work.config(text="停止工作")
             self.lbl_status.config(text=f"工作中 (自 {self.start_time.strftime('%H:%M')})", foreground="#4CAF50")
             self._run_work_timer()
         else:
-            # 停止工作
             self.stop_and_save()
 
     def stop_and_save(self):
@@ -107,19 +165,12 @@ class MainApp:
             self.is_working = False
             end_time = datetime.datetime.now()
             
-            # 保存数据
             self.db.save_record(self.start_time, end_time)
             
-            # UI重置
             self.btn_work.config(text="开始工作")
             self.lbl_status.config(text="已停止，记录已保存", foreground="#666")
             self.lbl_timer.config(text="00:00:00")
             
-            # 停止工作时，强制停止番茄钟（可选逻辑，根据你之前的需求，这里可以不强制，但通常下班了番茄钟也没必要跑了）
-            # 如果你想保留番茄钟继续跑，注释掉下面这行
-            # self.stop_pomo(completed=False) 
-            
-            # 刷新今日统计
             self.update_today_total()
 
     def _run_work_timer(self):
@@ -136,11 +187,9 @@ class MainApp:
     # ===========================
     def toggle_pomo(self):
         if not self.pomo_running:
-            # --- 修复逻辑: 自动触发开始工作 ---
+            # 自动联动工作记录
             if not self.is_working:
-                print("番茄钟触发自动工作记录...")
                 self.toggle_work()
-            # -------------------------------
             
             try:
                 mins = int(self.var_pomo_mins.get())
@@ -156,7 +205,6 @@ class MainApp:
             self.stop_pomo(completed=False)
 
     def stop_pomo(self, completed=True):
-        """停止番茄钟内部逻辑"""
         self.pomo_running = False
         self.btn_pomo.config(text="启动")
         self.spin_pomo.config(state='normal')
@@ -180,7 +228,7 @@ class MainApp:
             self.stop_pomo(completed=True)
 
     # ===========================
-    # 辅助功能
+    # 辅助与托盘
     # ===========================
     def open_report(self):
         ReportWindow(self.root, self.db)
@@ -207,11 +255,14 @@ class MainApp:
         self.root.after(0, self.root.deiconify)
 
     def quit_app(self, icon=None, item=None):
+        """完全退出程序"""
         if self.is_working:
             end_time = datetime.datetime.now()
-            # 退出时也使用带过滤的 save_record
             self.db.save_record(self.start_time, end_time)
-        self.icon.stop()
+        
+        if hasattr(self, 'icon'):
+            self.icon.stop()
+        
         self.root.after(0, self.root.destroy)
         sys.exit(0)
 
