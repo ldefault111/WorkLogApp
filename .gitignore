@@ -16,3 +16,5 @@ dist/
 *.json
 
 icon_gen.py
+
+SPEC.md
