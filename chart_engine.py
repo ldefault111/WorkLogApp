@@ -56,12 +56,26 @@ class ReportWindow(tk.Toplevel):
         # 顶部控制
         ctrl_frame = ttk.Frame(self.tab_week)
         ctrl_frame.pack(fill='x', pady=5)
+        
+        # [左侧] 上一周按钮
         ttk.Button(ctrl_frame, text="<< 上一周", command=lambda: self._change_week(-1)).pack(side='left', padx=10)
-        self.lbl_week_range = ttk.Label(ctrl_frame, text="Loading...", font=("Microsoft YaHei", 10, "bold"))
-        self.lbl_week_range.pack(side='left', expand=True)
+        
+        # [中间] 信息展示区 (改为 Frame 以便垂直排列日期和总时长)
+        center_info = ttk.Frame(ctrl_frame)
+        center_info.pack(side='left', expand=True)
+        
+        # 日期范围标签
+        self.lbl_week_range = ttk.Label(center_info, text="Loading...", font=("Microsoft YaHei", 10, "bold"))
+        self.lbl_week_range.pack(anchor='center')
+        
+        # === 新增：本周总时长标签 ===
+        self.lbl_week_total = ttk.Label(center_info, text="...", font=("Microsoft YaHei", 10), foreground="#007ACC")
+        self.lbl_week_total.pack(anchor='center')
+
+        # [右侧] 下一周按钮
         ttk.Button(ctrl_frame, text="下一周 >>", command=lambda: self._change_week(1)).pack(side='right', padx=10)
 
-        # 绘图初始化
+        # 绘图初始化 (保持不变)
         self.fig_week = Figure(figsize=(8, 6), dpi=100)
         self.fig_week.subplots_adjust(hspace=0.4, top=0.9, bottom=0.1)
         self.ax_week_daily = self.fig_week.add_subplot(211)
@@ -77,11 +91,19 @@ class ReportWindow(tk.Toplevel):
         self._update_week_chart()
 
     def _update_week_chart(self):
-        # 使用独立的 view_week_date
+        # 获取数据
         daily_hours, start_dist, date_str = self.db.get_week_stats(self.view_week_date)
+        
+        # === 新增：计算总时长 ===
+        total_week_hours = sum(daily_hours)
+        
+        # 更新文字
         self.lbl_week_range.config(text=date_str)
+        self.lbl_week_total.config(text=f"本周总计投入: {total_week_hours:.1f} 小时")
 
-        # 上图
+        # --- 以下绘图逻辑保持不变 ---
+        
+        # 上图：每日时长
         ax1 = self.ax_week_daily
         ax1.clear()
         days = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
@@ -89,16 +111,19 @@ class ReportWindow(tk.Toplevel):
         ax1.bar_label(bars, fmt='%.1f h', padding=2)
         ax1.set_title("本周每日工作时长", fontsize=11)
         ax1.set_ylabel("小时")
+        # 动态调整Y轴上限，稍微留点空隙
         ax1.set_ylim(0, max(max(daily_hours), 1) * 1.2)
 
-        # 下图
+        # 下图：开始时间分布
         ax2 = self.ax_week_hourly
         ax2.clear()
         hours_x = list(range(24))
         bars2 = ax2.bar(hours_x, start_dist, color='#FFB86C', width=0.8)
+        # 只显示非0的标签
         ax2.bar_label(bars2, fmt='%d', padding=2, labels=[str(x) if x>0 else '' for x in start_dist])
         ax2.set_title("本周工作开始时间点分布", fontsize=11)
         ax2.set_xticks(hours_x)
+        # x轴标签隔一个显示一个，防止拥挤
         ax2.set_xticklabels([f"{h}" if h%2==0 else "" for h in hours_x], fontsize=8)
         
         self.canvas_week.draw()
