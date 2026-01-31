@@ -17,7 +17,7 @@ plt.rcParams['font.size'] = 9
 class ReportWindow(tk.Toplevel):
     def __init__(self, parent, db_handler):
         super().__init__(parent)
-        self.title("工作效能分析报表 (V3.2)")
+        self.title("工作效能分析报表 (V1.0)")
         self.geometry("1000x800")
         self.db = db_handler
         
