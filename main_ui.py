@@ -313,7 +313,7 @@ class MainApp:
     def _setup_tray(self):
         menu = pystray.Menu(
             pystray.MenuItem("显示主界面", self.show_window, default=True),
-            #pystray.MenuItem("退出程序", self.quit_app)
+            pystray.MenuItem("退出程序", self.quit_app)
         )
         self.icon = pystray.Icon("WorkTimer", self.create_icon(), "Work Timer", menu)
         threading.Thread(target=self.icon.run, daemon=True).start()
@@ -333,7 +333,14 @@ class MainApp:
         if hasattr(self, 'icon'):
             self.icon.stop()
         
-        self.root.after(0, self.root.destroy)
+        self.root.after(0, self._perform_exit)
+        # self.root.after(0, self.root.destroy)
+        # sys.exit(0)
+        
+    def _perform_exit(self):
+        """【新增函数】执行最终的销毁操作"""
+        # 这个函数由主线程执行，安全销毁窗口
+        self.root.destroy()
         sys.exit(0)
 
 if __name__ == "__main__":
